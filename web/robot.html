@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>VisionPsy Robot Sim — ESP32-S3-CAM 2WD</title>
+<style>
+:root{--bg:#0d1117;--surface:#161b22;--surface2:#21262d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+header{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border)}
+header h1{font-size:16px;font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--red)}
+.dot.on{background:var(--green)}
+#status-text{font-size:12px;color:var(--text2);flex:1}
+.btn-icon{background:var(--surface2);color:var(--text2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:13px}
+.btn-icon:hover{color:var(--text);border-color:var(--accent)}
+#stop-btn{background:var(--red);color:#fff;border:none;font-weight:700;padding:6px 16px;border-radius:6px;cursor:pointer}
+#stop-btn:active{transform:scale(.95)}
+main{display:flex;height:calc(100% - 45px)}
+#sim-wrap{flex:1;display:flex;flex-direction:column;min-width:0}
+#arena{flex:1;width:100%;min-height:0}
+#pov-bar{height:90px;background:#000;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:4px 10px}
+#pov{height:100%;flex:1}
+#pov-label{font-size:11px;color:var(--text2);writing-mode:vertical-rl;transform:rotate(180deg)}
+aside{width:320px;background:var(--surface);border-left:1px solid var(--border);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px}
+.panel{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:8px}
+.row{display:flex;justify-content:space-between;align-items:center;margin:4px 0;font-size:13px}
+.val{font-family:monospace;color:var(--accent);font-weight:600}
+.big{font-size:26px;text-align:center;font-family:monospace;color:var(--green);padding:4px 0}
+.big.warn{color:var(--red)}
+.motorbar{height:14px;background:#000;border-radius:4px;overflow:hidden;position:relative;flex:1;margin:0 8px}
+.motorbar>div{height:100%;width:0%;transition:width .1s}
+#bar-l>div{background:var(--accent)}
+#bar-r>div{background:var(--yellow)}
+.dpad{display:grid;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(3,44px);gap:5px;justify-content:center}
+.dpad button{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:18px;cursor:pointer;touch-action:manipulation}
+.dpad button:active{background:var(--accent);color:#000}
+.slider-row{display:flex;align-items:center;gap:8px;font-size:12px;margin:6px 0}
+.slider-row input{flex:1;accent-color:var(--accent)}
+.slider-row .val{width:38px;text-align:right}
+input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:13px}
+.toggle-row{display:flex;gap:8px;margin-top:8px}
+#ai-toggle{flex:1;background:var(--green);color:#000;border:none;border-radius:6px;padding:9px;font-weight:700;cursor:pointer;font-size:14px}
+#ai-toggle.on{background:var(--red);color:#fff}
+#ai-thinking{font-size:12px;color:var(--yellow);text-align:center;height:16px;margin-top:6px}
+#log{height:150px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;font-family:monospace;font-size:11px;line-height:1.5;color:var(--text2)}
+#log .cmd{color:var(--green)}
+#log .err{color:var(--red)}
+#log .info{color:var(--accent)}
+@media(max-width:700px){main{flex-direction:column}aside{width:100%;height:45%;border-left:none;border-top:1px solid var(--border)}#log{height:80px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 Robot Sim</h1>
+  <span class="dot" id="dot"></span>
+  <span id="status-text">connecting...</span>
+  <button id="stop-btn" onclick="emergencyStop()">STOP</button>
+  <button class="btn-icon" onclick="location.href='index.html'">💬 Chat</button>
+</header>
+<main>
+<div id="sim-wrap">
+  <canvas id="arena"></canvas>
+  <div id="pov-bar"><span id="pov-label">ESP32-CAM POV</span><canvas id="pov"></canvas></div>
+</div>
+<aside>
+  <div class="panel">
+    <h2>VL53L0X — Jarak Depan</h2>
+    <div class="big" id="vl53-val">---- mm</div>
+    <div class="row"><span>MPU6050 yaw</span><span class="val" id="yaw-val">0°</span></div>
+    <div class="row"><span>gyro z</span><span class="val" id="gyro-val">0°/s</span></div>
+    <div class="row"><span>posisi x,y</span><span class="val" id="pos-val">0, 0</span></div>
+  </div>
+  <div class="panel">
+    <h2>Motor PWM</h2>
+    <div class="row"><span>KIRI</span><div class="motorbar" id="bar-l"><div></div></div><span class="val" id="pwm-l">0</span></div>
+    <div class="row"><span>KANAN</span><div class="motorbar" id="bar-r"><div></div></div><span class="val" id="pwm-r">0</span></div>
+    <div class="slider-row"><span>L</span><input type="range" id="sl-l" min="-255" max="255" value="0"><span class="val" id="sl-l-v">0</span></div>
+    <div class="slider-row"><span>R</span><input type="range" id="sl-r" min="-255" max="255" value="0"><span class="val" id="sl-r-v">0</span></div>
+  </div>
+  <div class="panel">
+    <h2>Kendali Manual</h2>
+    <div class="dpad">
+      <span></span><button onpointerdown="manual(180,180)" onpointerup="manual(0,0)" onpointerleave="manual(0,0)">▲</button><span></span>
+      <button onpointerdown="manual(-140,140)" onpointerup="manual(0,0)" onpointerleave="manual(0,0)">◀</button>
+      <button onclick="manual(0,0)">■</button>
+      <button onpointerdown="manual(140,-140)" onpointerup="manual(0,0)" onpointerleave="manual(0,0)">▶</button>
+      <span></span><button onpointerdown="manual(-140,-140)" onpointerup="manual(0,0)" onpointerleave="manual(0,0)">▼</button><span></span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>AI Autopilot</h2>
+    <input type="text" id="mission" value="jelajahi ruangan, jangan menabrak" placeholder="misi robot...">
+    <div class="toggle-row">
+      <button id="ai-toggle" onclick="toggleAI()">▶ START AI</button>
+    </div>
+    <div id="ai-thinking"></div>
+  </div>
+  <div class="panel">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+</aside>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const LLM=location.protocol+'//'+location.hostname+':8090';
+
+const ARENA_W=3000, ARENA_H=2000, ROBOT_R=70, WHEEL_BASE=140;
+const MAX_SPEED=300, VL53_MAX=2000, FOV=60;
+
+let robot={x:600,y:1000,t:0};
+let mot={l:0,r:0};
+let trail=[], bumpUntil=0, lastTrail=0;
+let aiOn=false, aiBusy=false, manualHold=false;
+
+const obstacles=[
+  {x:1300,y:400,w:400,h:250},
+  {x:1900,y:1200,w:300,h:500},
+  {x:500,y:1450,w:450,h:300},
+  {x:2400,y:300,w:350,h:350}
+];
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function normDeg(d){d=((d+180)%360+360)%360-180;return d}
+
+function sense(){
+  const d=raycast(robot.x,robot.y,robot.t);
+  return{
+    vl53:Math.round(clamp(d+(Math.random()*10-5),20,VL53_MAX)),
+    yaw:Math.round(normDeg(robot.t*180/Math.PI)),
+    gyro:+(((mot.l-mot.r)/WHEEL_BASE)*180/Math.PI*(Math.random()*2-1)*.03).toFixed(1)
+  };
+}
+
+function rayRect(px,py,dx,dy,r){
+  let tmin=-Infinity,tmax=Infinity;
+  if(Math.abs(dx)<1e-9){if(px<r.x||px>r.x+r.w)return Infinity}
+  else{let t1=(r.x-px)/dx,t2=(r.x+r.w-px)/dx;if(t1>t2)[t1,t2]=[t2,t1];tmin=Math.max(tmin,t1);tmax=Math.min(tmax,t2)}
+  if(Math.abs(dy)<1e-9){if(py<r.y||py>r.y+r.h)return Infinity}
+  else{let t1=(r.y-py)/dy,t2=(r.y+r.h-py)/dy;if(t1>t2)[t1,t2]=[t2,t1];tmin=Math.max(tmin,t1);tmax=Math.min(tmax,t2)}
+  if(tmax<Math.max(tmin,0))return Infinity;
+  return tmin>0?tmin:Infinity;
+}
+
+function raycast(x,y,ang){
+  const dx=Math.cos(ang),dy=Math.sin(ang);
+  let best=Infinity;
+  best=Math.min(best,
+    rayRect(x,y,dx,dy,{x:-9999,y:-9999,w:ARENA_W+19998,h:9999}),
+    rayRect(x,y,dx,dy,{x:-9999,y:ARENA_H,w:ARENA_W+19998,h:9999}),
+    rayRect(x,y,dx,dy,{x:-9999,y:-9999,w:9999,h:ARENA_H+19998}),
+    rayRect(x,y,dx,dy,{x:ARENA_W,y:-9999,w:9999,h:ARENA_H+19998}));
+  for(const o of obstacles)best=Math.min(best,rayRect(x,y,dx,dy,o));
+  return Math.min(best,VL53_MAX);
+}
+
+function physics(dt){
+  if(Date.now()<bumpUntil)return;
+  const vL=mot.l/255*MAX_SPEED,vR=mot.r/255*MAX_SPEED;
+  const v=(vL+vR)/2,w=(vL-vR)/WHEEL_BASE;
+  robot.x+=v*Math.cos(robot.t)*dt;
+  robot.y+=v*Math.sin(robot.t)*dt;
+  robot.t+=w*dt;
+  resolveCollision();
+  if(Date.now()-lastTrail>150){trail.push({x:robot.x,y:robot.y});if(trail.length>600)trail.shift();lastTrail=Date.now()}
+}
+
+function resolveCollision(){
+  let hit=false;
+  const walls=[{x:-50,y:-50,w:ARENA_W+100,h:50},{x:-50,y:ARENA_H,w:ARENA_W+100,h:50},{x:-50,y:-50,w:50,h:ARENA_H+100},{x:ARENA_W,y:-50,w:50,h:ARENA_H+100}];
+  for(const r of[...obstacles,...walls]){
+    const cx=clamp(robot.x,r.x,r.x+r.w),cy=clamp(robot.y,r.y,r.y+r.h);
+    const dx=robot.x-cx,dy=robot.y-cy,dist=Math.hypot(dx,dy);
+    if(dist<ROBOT_R){
+      hit=true;
+      if(dist<1e-6){robot.x=r.x+r.w/2;robot.y=r.y+r.h/2;continue}
+      robot.x=cx+dx/dist*ROBOT_R;
+      robot.y=cy+dy/dist*ROBOT_R;
+    }
+  }
+  if(hit&&Date.now()>bumpUntil){
+    bumpUntil=Date.now()+400;
+    setMotors(0,0,true);
+    log('💥 BUMP! motor berhenti','err');
+  }
+}
+
+function setMotors(l,r,silent){
+  mot.l=clamp(Math.round(l),-255,255);
+  mot.r=clamp(Math.round(r),-255,255);
+  $('#sl-l').value=mot.l;$('#sl-r').value=mot.r;
+  $('#sl-l-v').textContent=mot.l;$('#sl-r-v').textContent=mot.r;
+  if(!silent)manualHold=false;
+}
+
+function manual(l,r){if(aiOn)return;setMotors(l,r);manualHold=l!==0||r!==0}
+function emergencyStop(){setMotors(0,0);log('🛑 EMERGENCY STOP','err')}
+
+async function askLLM(userMsg){
+  const sys='Kamu otak robot 2WD. Balas HANYA JSON: {"l":<-255..255>,"r":<-255..255>,"t":<100..1000>}. l=motor kiri, r=kanan, t=durasi ms. Contoh: jarak_depan=1800mm -> {"l":200,"r":200,"t":600} maju. jarak_depan=150mm -> {"l":-160,"r":160,"t":400} putar balik. belok kanan={"l":180,"r":50,"t":400}. belok kiri={"l":50,"r":180,"t":400}. mundur={"l":-150,"r":-150,"t":400}. Jika jarak_depan < 300mm JANGAN maju: putar atau mundur.';
+  const res=await fetch(LLM+'/v1/chat/completions',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      messages:[{role:'system',content:sys},{role:'user',content:userMsg}],
+      max_tokens:70,temperature:0.2,
+      chat_template_kwargs:{enable_thinking:false}
+    })
+  });
+  const d=await res.json();
+  return(d.choices&&d.choices[0].message.content)||'';
+}
+
+function parseCmd(txt){
+  const m=txt.match(/\{[^}]*\}/);
+  if(!m)return null;
+  try{
+    const j=JSON.parse(m[0]);
+    if(typeof j.l!=='number'||typeof j.r!=='number')return null;
+    return{l:j.l,r:j.r,t:clamp(j.t||500,100,1000)};
+  }catch(e){return null}
+}
+
+async function aiStep(){
+  const s=sense();
+  const mission=$('#mission').value.trim()||'jelajahi ruangan';
+  const msg=`sensor: jarak_depan=${s.vl53}mm yaw=${s.yaw}deg | misi: ${mission}`;
+  $('#ai-thinking').textContent='🧠 berpikir...';
+  let txt='';
+  try{txt=await askLLM(msg)}catch(e){$('#ai-thinking').textContent='';log('LLM error: '+e.message,'err');await sleep(800);return}
+  $('#ai-thinking').textContent='';
+  const c=parseCmd(txt);
+  if(!c){setMotors(0,0,true);log('✂ parse gagal: '+txt.replace(/\n/g,' ').slice(0,70),'err');await sleep(500);return}
+  if(s.vl53<220&&c.l>40&&c.r>40){
+    c.l=-150;c.r=150;c.t=Math.max(c.t,400);
+    log('⚠ safety override: dinding '+s.vl53+'mm, dipaksa putar','err');
+  }
+  setMotors(c.l,c.r,true);
+  log(`➡ l=${c.l} r=${c.r} t=${c.t}ms (jarak ${s.vl53}mm)`,'cmd');
+  await sleep(c.t);
+}
+
+async function aiLoop(){
+  while(aiOn){
+    if(aiBusy){await sleep(100);continue}
+    aiBusy=true;
+    try{await aiStep()}catch(e){log('loop err: '+e.message,'err')}
+    aiBusy=false;
+    await sleep(50);
+  }
+  setMotors(0,0);
+  $('#ai-thinking').textContent='';
+}
+
+function toggleAI(){
+  aiOn=!aiOn;
+  const b=$('#ai-toggle');
+  if(aiOn){b.textContent='⏸ STOP AI';b.classList.add('on');log('🤖 AI autopilot ON — '+$('#mission').value,'info');aiLoop()}
+  else{b.textContent='▶ START AI';b.classList.remove('on');setMotors(0,0);log('🤖 AI autopilot OFF','info')}
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function log(msg,cls){
+  const el=$('#log'),t=new Date().toTimeString().slice(0,8);
+  el.innerHTML+=`<div class="${cls||''}">[${t}] ${msg}</div>`;
+  el.scrollTop=el.scrollHeight;
+}
+
+function drawArena(){
+  const c=$('#arena'),ctx=c.getContext('2d');
+  const dpr=devicePixelRatio||1;
+  const cw=c.clientWidth,ch=c.clientHeight;
+  if(c.width!==cw*dpr){c.width=cw*dpr;c.height=ch*dpr}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#0a0e14';ctx.fillRect(0,0,cw,ch);
+  const sc=Math.min((cw-20)/ARENA_W,(ch-20)/ARENA_H);
+  const ox=(cw-ARENA_W*sc)/2,oy=(ch-ARENA_H*sc)/2;
+  ctx.save();ctx.translate(ox,oy);ctx.scale(sc,sc);
+  ctx.fillStyle='#111827';ctx.fillRect(0,0,ARENA_W,ARENA_H);
+  ctx.strokeStyle='#30363d';ctx.lineWidth=8;ctx.strokeRect(0,0,ARENA_W,ARENA_H);
+  ctx.strokeStyle='#1a2230';ctx.lineWidth=1;
+  for(let gx=500;gx<ARENA_W;gx+=500){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,ARENA_H);ctx.stroke()}
+  for(let gy=500;gy<ARENA_H;gy+=500){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(ARENA_W,gy);ctx.stroke()}
+  ctx.fillStyle='#2d333b';
+  for(const o of obstacles)ctx.fillRect(o.x,o.y,o.w,o.h);
+  ctx.strokeStyle='#444c56';ctx.lineWidth=4;
+  for(const o of obstacles)ctx.strokeRect(o.x,o.y,o.w,o.h);
+  if(trail.length>1){
+    ctx.strokeStyle='rgba(88,166,255,.35)';ctx.lineWidth=6;ctx.beginPath();
+    ctx.moveTo(trail[0].x,trail[0].y);
+    for(const p of trail)ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+  }
+  const d=raycast(robot.x,robot.y,robot.t);
+  ctx.strokeStyle=d<VL53_MAX?'rgba(248,81,73,.7)':'rgba(63,185,80,.5)';
+  ctx.lineWidth=6;ctx.setLineDash([30,20]);
+  ctx.beginPath();ctx.moveTo(robot.x,robot.y);
+  ctx.lineTo(robot.x+Math.cos(robot.t)*d,robot.y+Math.sin(robot.t)*d);
+  ctx.stroke();ctx.setLineDash([]);
+  ctx.save();ctx.translate(robot.x,robot.y);ctx.rotate(robot.t);
+  ctx.fillStyle='#1f6feb';
+  ctx.fillRect(-WHEEL_BASE/2-14,-ROBOT_R-6,WHEEL_BASE+28,26);
+  ctx.fillRect(-WHEEL_BASE/2-14,ROBOT_R-20,WHEEL_BASE+28,26);
+  ctx.fillStyle='#58a6ff';
+  ctx.beginPath();ctx.arc(0,0,ROBOT_R-8,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#0d1117';
+  ctx.beginPath();ctx.arc(0,0,ROBOT_R-28,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#3fb950';
+  ctx.beginPath();ctx.arc(ROBOT_R-30,0,12,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  ctx.restore();
+  ctx.fillStyle='#8b949e';ctx.font='11px monospace';
+  ctx.fillText(`arena ${ARENA_W}×${ARENA_H}mm  skala ${(sc*100).toFixed(0)}%`,ox,oy-6>10?oy-6:oy+14);
+}
+
+function drawPOV(){
+  const c=$('#pov'),ctx=c.getContext('2d');
+  const dpr=devicePixelRatio||1;
+  const cw=c.clientWidth,ch=c.clientHeight;
+  if(c.width!==cw*dpr){c.width=cw*dpr;c.height=ch*dpr}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,cw,ch);
+  const N=32,half=FOV/2;
+  for(let i=0;i<N;i++){
+    const a=robot.t+(-half+i/(N-1)*FOV)*Math.PI/180;
+    const d=raycast(robot.x,robot.y,a);
+    const closeness=clamp(1-d/1500,0,1);
+    const bh=Math.max(2,closeness*ch*.9);
+    const bw=cw/N+1;
+    const g=Math.floor(40+closeness*200);
+    ctx.fillStyle=`rgb(${Math.floor(g*.55)},${g},${Math.floor(g*.75)})`;
+    ctx.fillRect(i*cw/N,(ch-bh)/2,bw,bh);
+  }
+  ctx.fillStyle='rgba(63,185,80,.9)';
+  ctx.beginPath();ctx.arc(cw/2,ch/2,3,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(63,185,80,.25)';
+  ctx.strokeRect(cw*.3,ch*.3,cw*.4,ch*.4);
+}
+
+function updateHUD(){
+  const s=sense();
+  const vl=$('#vl53-val');
+  vl.textContent=s.vl53+' mm';
+  vl.classList.toggle('warn',s.vl53<250);
+  $('#yaw-val').textContent=s.yaw+'°';
+  $('#gyro-val').textContent=s.gyro+'°/s';
+  $('#pos-val').textContent=Math.round(robot.x)+', '+Math.round(robot.y);
+  $('#pwm-l').textContent=mot.l;$('#pwm-r').textContent=mot.r;
+  const pl=Math.abs(mot.l)/255*100,pr=Math.abs(mot.r)/255*100;
+  $('#bar-l').firstElementChild.style.width=pl+'%';
+  $('#bar-r').firstElementChild.style.width=pr+'%';
+}
+
+let lastT=performance.now();
+function frame(now){
+  const dt=Math.min((now-lastT)/1000,.05);
+  lastT=now;
+  physics(dt);
+  drawArena();
+  drawPOV();
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+['sl-l','sl-r'].forEach(id=>{
+  $('#'+id).addEventListener('input',function(){
+    if(aiOn)return;
+    setMotors(+$('#sl-l').value,+$('#sl-r').value);
+  });
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(aiOn)return;
+  const k=e.key.toLowerCase();
+  if(k==='w'||e.key==='ArrowUp')manual(200,200);
+  else if(k==='s'||e.key==='ArrowDown')manual(-160,-160);
+  else if(k==='a'||e.key==='ArrowLeft')manual(-130,130);
+  else if(k==='d'||e.key==='ArrowRight')manual(130,-130);
+  else if(k===' ')emergencyStop();
+});
+document.addEventListener('keyup',e=>{
+  const k=e.key.toLowerCase();
+  if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)&&!aiOn)setMotors(0,0);
+});
+
+fetch(LLM+'/models').then(r=>r.json()).then(()=>{
+  $('#dot').classList.add('on');
+  $('#status-text').textContent='llama-server terhubung';
+}).catch(()=>{
+  $('#status-text').textContent='llama-server TIDAK terhubung (:8090)';
+});
+
+log('simulator siap. WASD/panah=manual, SPASI=stop','info');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
