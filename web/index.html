@@ -252,23 +252,26 @@ textInput.addEventListener('keydown',e=>{
 });
 
 // --- File input ---
-fileInput.addEventListener('change',function(){
-  const f=this.files[0];if(!f)return;
+function loadImageResized(file,max,cb){
   const img=new Image();
   img.onload=()=>{
-    const max=640;
     const s=Math.min(1,max/Math.max(img.width,img.height));
     const c=document.createElement('canvas');
     c.width=Math.max(1,Math.round(img.width*s));
     c.height=Math.max(1,Math.round(img.height*s));
     c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-    const out=c.toDataURL('image/jpeg',0.75);
+    cb(c.toDataURL('image/jpeg',0.75));
+  };
+  img.src=URL.createObjectURL(file);
+}
+fileInput.addEventListener('change',function(){
+  const f=this.files[0];if(!f)return;
+  loadImageResized(f,640,out=>{
     imageB64=out.split(',')[1];
     $('#preview-img').src=out;
     $('#preview-area').classList.add('has-img');
     textInput.focus();
-  };
-  img.src=URL.createObjectURL(f);
+  });
   this.value='';
 });
 function removeImage(){imageB64=null;$('#preview-area').classList.remove('has-img');}
@@ -498,13 +501,11 @@ document.addEventListener('drop',e=>{
   e.preventDefault();
   const f=e.dataTransfer.files[0];
   if(!f||!f.type.startsWith('image/'))return;
-  const reader=new FileReader();
-  reader.onload=ev=>{
-    imageB64=ev.target.result.split(',')[1];
-    $('#preview-img').src=ev.target.result;
+  loadImageResized(f,640,out=>{
+    imageB64=out.split(',')[1];
+    $('#preview-img').src=out;
     $('#preview-area').classList.add('has-img');
-  };
-  reader.readAsDataURL(f);
+  });
 });
 
 // --- Init ---
