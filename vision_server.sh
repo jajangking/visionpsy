@@ -26,7 +26,7 @@ start() {
     termux-wake-lock 2>/dev/null
     # pid file ditulis dari DALAM subshell, jadi berisi pid llama-server
     # yang sebenarnya setelah exec (bukan pid wrapper).
-    setsid bash -c "echo \$\$ > $PID_FILE; exec env LD_LIBRARY_PATH=$LLAMA_DIR MTMD_NO_UPSCALE=1 MTMD_DISABLE_BATCH_SLICES=1 $LLAMA_DIR/llama-server -m $MODEL --mmproj $MMPROJ -t 4 -c 4096 -C 0xF0 -fa auto -b 2048 -ub 1024 --no-warmup --host $HOST --port $PORT" > "$LOG_FILE" 2>&1 &
+    setsid bash -c "echo \$\$ > $PID_FILE; exec env LD_LIBRARY_PATH=$LLAMA_DIR MTMD_NO_UPSCALE=1 MTMD_DISABLE_BATCH_SLICES=1 $LLAMA_DIR/llama-server -m $MODEL --mmproj $MMPROJ -t 4 -c 4096 -np 1 -ctk q8_0 -ctv q8_0 -C 0xF0 -fa auto -b 2048 -ub 1024 --no-warmup --host $HOST --port $PORT" > "$LOG_FILE" 2>&1 &
     disown
     for i in $(seq 1 60); do
         if curl -s -m 2 http://$HOST:$PORT/health | grep -q '"ok"'; then
@@ -94,7 +94,8 @@ json.dump({
     "messages": [{"role": "user", "content": [
         {"type": "text", "text": prompt},
         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}],
-    "max_tokens": 300,
+    "max_tokens": 512,
+    "chat_template_kwargs": {"enable_thinking": False},
 }, open(out, "w"))
 EOF
     curl -s -X POST http://$HOST:$PORT/v1/chat/completions \

@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# VisionPsy launcher menu - TUI untuk Qwen3-VL-2B
+# VisionPsy launcher menu - TUI multimodel (model aktif: models/current.txt)
 DIR=~/visionpsy
 HOST=127.0.0.1
 API_PORT=8090
@@ -141,9 +141,9 @@ menu() {
     fi
     while true; do
         clear
-        local title=" QWEN3-VL-2B "
-        local pad=$(( (W - ${#title}) / 2 ))
         local cur=$(cat $DIR/models/current.txt 2>/dev/null || echo "?")
+        local title=" ${cur^^} "
+        local pad=$(( (W - ${#title}) / 2 ))
         local st; st=$(server_status)
 
         bar_top

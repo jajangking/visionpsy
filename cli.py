@@ -13,15 +13,16 @@ HELP = B + "Perintah:" + R + """
   """ + GR + "/img <file>" + R + """     lampirkan gambar ke pesan berikutnya
   """ + GR + "/sys <txt>" + R + """      set system prompt ("/sys off" = hapus)
   """ + GR + "/clr" + R + """            bersihkan riwayat
-  """ + GR + "/t <n>" + R + """          batas token jawaban (default 128)
+  """ + GR + "/t <n>" + R + """          batas token jawaban (default 512)
   """ + GR + "/help" + R + """           bantuan ini
   """ + GR + "/quit" + R + """           keluar (server tetap jalan)
 """
 
 
-def complete(messages, max_tokens=128, temp=0.5):
+def complete(messages, max_tokens=512, temp=0.5, think=False):
     body = json.dumps({"messages": messages, "max_tokens": max_tokens,
-                       "temperature": temp, "stream": False}).encode()
+                       "temperature": temp, "stream": False,
+                       "chat_template_kwargs": {"enable_thinking": think}}).encode()
     req = urllib.request.Request(URL, data=body, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=600) as resp:
@@ -55,7 +56,7 @@ def ask(img, q, max_tokens=256):
 
 
 def chat():
-    messages, system, max_tokens, pending = [], None, 128, None
+    messages, system, max_tokens, pending = [], None, 512, None
     print(D + "Chat. /help untuk bantuan. /quit keluar (server tetap nyala)." + R)
     while True:
         try:
