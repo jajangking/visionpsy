@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# qwen - VisionPsy launcher (setup aktif: qwen3-vl-2b). Delegasi ke menu kei.
+exec bash "$HOME/visionpsy/visionpsy-menu.sh" "$@"

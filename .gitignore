@@ -1,0 +1,13 @@
+models/
+build/
+__pycache__/
+*.log
+*.pid
+web/__pycache__/
+web/memory.json
+web/web.log
+.DS_Store
+
+qvac-visionpsy-nano/
+test.err
+

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# VisionPsy-Nano launcher + CLI wrapper
+# Usage:
+#   visionpsy            -> chat (starts server if needed, keeps it alive after exit)
+#   visionpsy img <f>    -> describe image
+#   visionpsy ask <f> q  -> ask about image
+#   visionpsy stop       -> stop background server
+#   visionpsy start      -> start server only
+#   visionpsy status     -> server status
+DIR=~/visionpsy
+export LD_LIBRARY_PATH="$DIR/build/bin"
+export MTMD_NO_UPSCALE=1
+
+case "$1" in
+  stop)   bash "$DIR/vision_server.sh" stop ;;
+  start)  bash "$DIR/vision_server.sh" start ;;
+  status) bash "$DIR/vision_server.sh" status ;;
+  img)    shift; bash "$DIR/vision_server.sh" query "$1" "Describe this image in detail." ;;
+  ask)    shift; bash "$DIR/vision_server.sh" query "$1" "${*:2}" ;;
+  *)
+    bash "$DIR/vision_server.sh" start || exit 1
+    python3 -u "$DIR/web/cli.py"
+    echo "[server masih hidup di background - ketik 'visionpsy stop' untuk mematikannya]"
+    ;;
+esac
